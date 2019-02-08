@@ -17,3 +17,6 @@
 
 ##### TextPaint
 - Extends Paint
+
+###onMeasure()
+

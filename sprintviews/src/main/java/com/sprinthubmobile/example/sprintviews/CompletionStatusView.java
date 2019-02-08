@@ -22,6 +22,7 @@ public class CompletionStatusView extends View {
     private int mFillColor;
     private Paint mPaintFill;
     private float mRadius;
+    private int mMaxHorizontalItems;
 
     public CompletionStatusView(Context context) {
         super(context);
@@ -60,8 +61,6 @@ public class CompletionStatusView extends View {
         mSpacing = 30f;
         mRadius = (mShapeSize - mOutlineWidth) /2;
 
-        setupCompletionRectangles();
-
         mOutlineColor = Color.BLACK;
         mPaintOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
         mPaintOutline.setStyle(Paint.Style.STROKE);
@@ -94,12 +93,24 @@ public class CompletionStatusView extends View {
      * Items are drawn inside rectangles
      */
     private void setupCompletionRectangles() {
+        int paddingTop = getPaddingTop();
+        int paddingBottom = getPaddingBottom();
+        int paddingLeft = getPaddingLeft();
+        int paddingRight = getPaddingRight();
         mCompletionRectangles = new Rect[mCompletionStatus.length];
         for (int completionIndex=0; completionIndex < mCompletionRectangles.length; completionIndex++) {
-            int x = (int) (completionIndex * (mShapeSize + mSpacing));
-            int y = 0;
+
+            int column = completionIndex % mMaxHorizontalItems;
+            int row = completionIndex / mMaxHorizontalItems;
+            int x = paddingLeft + (int) (column * (mShapeSize + mSpacing));
+            int y = paddingTop + (int) (row * (mShapeSize + mSpacing));
             mCompletionRectangles[completionIndex] = new Rect(x, y, x + (int) mShapeSize, y + (int) mShapeSize);
         }
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        setupCompletionRectangles();
     }
 
     @Override
@@ -117,6 +128,28 @@ public class CompletionStatusView extends View {
         }
     }
 
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        int desiredWidth;
+        int desiredHeight;
+
+        int specWidth = MeasureSpec.getSize(widthMeasureSpec);
+        int availableWidth = specWidth - getPaddingLeft() - getPaddingRight();
+        int horizontalItemsThatCanFit = (int) (availableWidth / (mShapeSize + mSpacing));
+        mMaxHorizontalItems = Math.min(horizontalItemsThatCanFit, mCompletionStatus.length);
+
+        desiredWidth = (int) ((mMaxHorizontalItems * (mShapeSize + mSpacing)) - mSpacing);
+        desiredWidth += getPaddingLeft() + getPaddingRight();
+
+        int rows = ((mCompletionStatus.length - 1) / mMaxHorizontalItems) + 1;
+        desiredHeight = (int) ((rows * (mShapeSize + mSpacing)) - mSpacing);
+        desiredHeight += getPaddingTop() + getPaddingBottom();
+
+        int width = resolveSizeAndState(desiredWidth, widthMeasureSpec, 0);
+        int height = resolveSizeAndState(desiredHeight, heightMeasureSpec, 0);
+
+        setMeasuredDimension(width, height);
+    }
 
     public boolean[] getCompletionStatus() {
         return mCompletionStatus;
