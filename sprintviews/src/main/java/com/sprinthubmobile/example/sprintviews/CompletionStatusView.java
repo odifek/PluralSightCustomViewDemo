@@ -7,6 +7,8 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.util.DisplayMetrics;
+import android.view.MotionEvent;
 import android.view.View;
 
 /**
@@ -15,6 +17,11 @@ import android.view.View;
 public class CompletionStatusView extends View {
 
     private static final int EDIT_MODE_COMPLETION_COUNT = 7;
+    private static final int INVALID_INDEX = -1;
+    private static final int SHAPE_CIRCLE = 0;
+    private static final float DEFAULT_OUTLINE_WIDTH_DP = 2f;
+    public static final float DEFAULT_SHAPE_SIZE_DP = 48f;
+    public static final float DEFAULT_SPACING_DP = 8f;
     private boolean[] mCompletionStatus;
     private Rect[] mCompletionRectangles;
     private int mOutlineColor;
@@ -23,6 +30,7 @@ public class CompletionStatusView extends View {
     private Paint mPaintFill;
     private float mRadius;
     private int mMaxHorizontalItems;
+    private int mShape;
 
     public CompletionStatusView(Context context) {
         super(context);
@@ -52,16 +60,22 @@ public class CompletionStatusView extends View {
         final TypedArray a = getContext().obtainStyledAttributes(
                 attrs, R.styleable.CompletionStatusView, defStyle, 0);
 
+        DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
+        float displayDensity = dm.density;
+        float defaultOutlineWidthPixels = displayDensity * DEFAULT_OUTLINE_WIDTH_DP;
 
+        float defaultShapeSizePixels = displayDensity * DEFAULT_SHAPE_SIZE_DP;
+        float defaultSpacingPixels = displayDensity * DEFAULT_SPACING_DP;
+
+        mOutlineColor = a.getColor(R.styleable.CompletionStatusView_outlineColor, Color.BLACK);
+        mShape = a.getInt(R.styleable.CompletionStatusView_shape, SHAPE_CIRCLE);
+        mOutlineWidth = a.getDimension(R.styleable.CompletionStatusView_outlineWidth, defaultOutlineWidthPixels);
 
         a.recycle();
 
-        mOutlineWidth = 6f;
-        mShapeSize = 144f;
-        mSpacing = 30f;
+        mShapeSize = defaultShapeSizePixels;
+        mSpacing = defaultSpacingPixels;
         mRadius = (mShapeSize - mOutlineWidth) /2;
-
-        mOutlineColor = Color.BLACK;
         mPaintOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
         mPaintOutline.setStyle(Paint.Style.STROKE);
         mPaintOutline.setStrokeWidth(mOutlineWidth);
@@ -92,16 +106,21 @@ public class CompletionStatusView extends View {
     /**
      * Items are drawn inside rectangles
      */
-    private void setupCompletionRectangles() {
+    private void setupCompletionRectangles(int width) {
         int paddingTop = getPaddingTop();
         int paddingBottom = getPaddingBottom();
         int paddingLeft = getPaddingLeft();
         int paddingRight = getPaddingRight();
+
+        int availableWidth = width - paddingLeft - paddingRight;
+        int horizontalItemsThatCanFit = (int)(availableWidth / (mShapeSize + mSpacing));
+        int maxHorizontalItems = Math.min(horizontalItemsThatCanFit, mCompletionStatus.length);
+
         mCompletionRectangles = new Rect[mCompletionStatus.length];
         for (int completionIndex=0; completionIndex < mCompletionRectangles.length; completionIndex++) {
 
-            int column = completionIndex % mMaxHorizontalItems;
-            int row = completionIndex / mMaxHorizontalItems;
+            int column = completionIndex % maxHorizontalItems;
+            int row = completionIndex / maxHorizontalItems;
             int x = paddingLeft + (int) (column * (mShapeSize + mSpacing));
             int y = paddingTop + (int) (row * (mShapeSize + mSpacing));
             mCompletionRectangles[completionIndex] = new Rect(x, y, x + (int) mShapeSize, y + (int) mShapeSize);
@@ -110,7 +129,7 @@ public class CompletionStatusView extends View {
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        setupCompletionRectangles();
+        setupCompletionRectangles(w);
     }
 
     @Override
@@ -118,14 +137,32 @@ public class CompletionStatusView extends View {
         super.onDraw(canvas);
 
         for (int completionIndex =0; completionIndex < mCompletionRectangles.length; completionIndex++) {
-            float x = mCompletionRectangles[completionIndex].centerX();
-            float y = mCompletionRectangles[completionIndex].centerY();
+            if (mShape == SHAPE_CIRCLE) {
+                float x = mCompletionRectangles[completionIndex].centerX();
+                float y = mCompletionRectangles[completionIndex].centerY();
 
-            if (mCompletionStatus[completionIndex]) {
-                canvas.drawCircle(x, y, mRadius, mPaintFill);
+                if (mCompletionStatus[completionIndex]) {
+                    canvas.drawCircle(x, y, mRadius, mPaintFill);
+                }
+                canvas.drawCircle(x, y, mRadius, mPaintOutline);
+            } else {
+                drawSquare(canvas, completionIndex);
             }
-            canvas.drawCircle(x, y, mRadius, mPaintOutline);
         }
+    }
+
+    private void drawSquare(Canvas canvas, int itemIndex) {
+        Rect itemRectangle = mCompletionRectangles[itemIndex];
+
+        if (mCompletionStatus[itemIndex]) {
+            canvas.drawRect(itemRectangle, mPaintFill);
+        }
+
+        canvas.drawRect(itemRectangle.left + (mOutlineWidth/2),
+                itemRectangle.top + (mOutlineWidth/2),
+                itemRectangle.right - (mOutlineWidth/2),
+                itemRectangle.bottom - (mOutlineWidth/2),
+                mPaintOutline);
     }
 
     @Override
@@ -149,6 +186,37 @@ public class CompletionStatusView extends View {
         int height = resolveSizeAndState(desiredHeight, heightMeasureSpec, 0);
 
         setMeasuredDimension(width, height);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        switch (event.getAction()){
+            case MotionEvent.ACTION_DOWN:
+                return true;
+            case MotionEvent.ACTION_UP:
+                int itemIdex = findItemAtPoint(event.getX(), event.getY());
+                onItemSelected(itemIdex);
+                return true;
+        }
+        return super.onTouchEvent(event);
+    }
+
+    private void onItemSelected(int itemIndex) {
+        if (itemIndex == INVALID_INDEX) return;
+
+        mCompletionStatus[itemIndex] = !mCompletionStatus[itemIndex];
+        invalidate();
+    }
+
+    private int findItemAtPoint(float x, float y) {
+        int touchedIdex = INVALID_INDEX;
+        for (int i = 0; i < mCompletionRectangles.length; i++) {
+            if (mCompletionRectangles[i].contains((int)x, (int)y)) {
+                touchedIdex = i;
+                break;
+            }
+        }
+        return touchedIdex;
     }
 
     public boolean[] getCompletionStatus() {
